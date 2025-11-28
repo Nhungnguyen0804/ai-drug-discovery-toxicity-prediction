@@ -68,8 +68,7 @@ class SmartDrugDataset(Dataset):
                 'graph': graph,
                 'input_ids': text_enc['input_ids'].squeeze(0),
                 'attention_mask': text_enc['attention_mask'].squeeze(0),
-                'labels': torch.tensor(labels_array, dtype=torch.float),
-                'task_mask': torch.tensor(mask_array, dtype=torch.float)
+                'labels': torch.tensor(labels_array, dtype=torch.float)
             })
             
     def __len__(self):
