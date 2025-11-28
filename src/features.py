@@ -1,12 +1,24 @@
+
 import pandas as pd
 import numpy as np
 from rdkit import Chem
-# pip install torch torchvision torchaudio
 import torch
+# pip install torch torchvision torchaudio
+
 # pip install torch-geometric
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 import random
+
+def smiles_to_molecule(smiles):
+    try:
+        molecule = Chem.MolFromSmiles(smiles, sanitize=False) #Lọc molecule bị valence lỗi
+        Chem.SanitizeMol(molecule)
+        return molecule
+    except:
+        return None
+    
+
 # ============================ get_atom_features =======================
 def one_hot_encoding(x, permitted_list):
     if x not in permitted_list:
@@ -79,4 +91,63 @@ def get_bond_features(bond, use_stereochemistry=True):
     return np.array(bond_feature_vector)
 
 
+def molecule_to_graph(molecule, y, mask,
+                      use_atom_features=True, use_bond_features=True,
+                      hydrogens_implicit=True):
+    """
+    Convert RDKit Mol -> PyG Data
+    """
+    if molecule is None:
+        return None
 
+    # ===== NODE FEATURES (Atom) =====
+    atom_features = []
+    for atom in molecule.GetAtoms():
+        feat = get_atom_features(atom, use_chirality=True, hydrogens_implicit=hydrogens_implicit)
+        atom_features.append(feat)
+
+    x = torch.tensor(np.vstack(atom_features), dtype=torch.float) if len(atom_features) > 0 else torch.zeros((0,1), dtype=torch.float)
+
+    # ===== EDGE FEATURES (Bond) =====
+    edge_index = []
+    edge_attr_list = []
+
+    for bond in molecule.GetBonds():
+        u = bond.GetBeginAtomIdx()
+        v = bond.GetEndAtomIdx()
+        
+        # Lấy feature cho cạnh
+        bf = get_bond_features(bond) if use_bond_features else np.array([1.0])
+
+        # Thêm cạnh 2 chiều (Undirected graph)
+        edge_index.append([u, v])
+        edge_attr_list.append(bf)
+        
+        edge_index.append([v, u])
+        edge_attr_list.append(bf)
+
+    # Chuyển đổi sang Tensor
+    if len(edge_index) == 0:
+        edge_index = torch.zeros((2, 0), dtype=torch.long)
+        # Tính kích thước feature ảo để tránh lỗi shape
+        dummy_bond = get_bond_features(Chem.MolFromSmiles("CC").GetBondBetweenAtoms(0,1))
+        edge_attr = torch.zeros((0, len(dummy_bond)), dtype=torch.float)
+    else:
+        edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
+        edge_attr = torch.tensor(np.vstack(edge_attr_list), dtype=torch.float)
+
+    # ===== LABELS & METADATA =====
+    # Xử lý y và mask để đảm bảo đúng chiều (thường là [1, num_tasks])
+    y_tensor = torch.tensor(y, dtype=torch.float).view(1, -1)
+    mask_tensor = torch.tensor(mask, dtype=torch.float).view(1, -1)
+
+    data = Data(
+        x=x,
+        edge_index=edge_index,
+        edge_attr=edge_attr,
+        y=y_tensor,
+        mask=mask_tensor,
+        
+    )
+    
+    return data

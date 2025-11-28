@@ -5,43 +5,71 @@ import pandas as pd
 import numpy as np
 from transformers import AutoTokenizer
 from torch_geometric.data import Data as GraphData
-from rdkit import Chem
-
-
+import features as features
 
 class SmartDrugDataset(Dataset):
-    def __init__(self, df, tokenizer, max_len=128, label_cols=None):
+    def __init__(self, df, tokenizer, max_len=128, smiles_col='clean_smiles', label_cols=None):
+        """
+        Args:
+            df: DataFrame chứa dữ liệu (Tox21, ToxCast, hoặc Sider).
+            tokenizer: HuggingFace Tokenizer.
+            max_len: Độ dài tối đa của chuỗi text.
+            smiles_col: Tên cột chứa chuỗi SMILES (vd: 'clean_smiles', 'smiles').
+            label_cols: Danh sách tên cột nhãn. Nếu None, tự động lấy các cột còn lại.
+        """
         self.data = []
-        print("Processing Dataset...")
+        print(f"Processing Dataset with {len(df)} samples...")
         
-        # Nếu không truyền label_cols, lấy tất cả cột trừ SMILES
+        # 1. Xác định cột nhãn (loại bỏ cột smiles và các cột id nếu có)
         if label_cols is None:
-            label_cols = [c for c in df.columns if c != 'cleaned_smiles']
+            exclude_cols = [smiles_col, 'mol_id', 'id', 'smiles','cleaned_smiles']
+            label_cols = [c for c in df.columns if c not in exclude_cols]
+        
+        print(f"Detected {len(label_cols)} tasks/labels.")
 
+        # 2. Duyệt qua từng dòng dữ liệu
         for idx, row in tqdm(df.iterrows(), total=df.shape[0]):
-            # --- Graph ---
-            graph = smiles_to_graph(row['cleaned_smiles'])
-            if graph is None:
-                continue
+            smi = row[smiles_col]
+            
+            # --- Bước A: Tạo Labels và Mask (Xử lý NaN) ---
+            # Lấy giá trị labels dưới dạng numpy array
+            raw_labels = row[label_cols].values.astype(float)
+            
+            # Tạo mask: 1 nếu có dữ liệu, 0 nếu là NaN
+            mask_array = ~np.isnan(raw_labels)
+            mask_array = mask_array.astype(float)
+            
+            # Fill NaN bằng 0 (để không lỗi tensor, mask sẽ lo phần tính loss sau)
+            labels_array = np.nan_to_num(raw_labels, nan=0.0)
 
-            # --- Text ---
+            # --- Bước B: Xử lý Graph ---
+            mol = features.smiles_to_molecule(smi)
+            if mol is None:
+                continue # Bỏ qua chất lỗi
+            
+            # Gọi hàm tạo graph (truyền labels và mask đã xử lý)
+            graph = features.molecule_to_graph(
+                molecule=mol,
+                y=labels_array,
+                mask=mask_array
+            )
+
+            # --- Bước C: Xử lý Text (Tokenizer) ---
             text_enc = tokenizer(
-                row['cleaned_smiles'], 
+                smi, 
                 max_length=max_len, 
                 padding='max_length', 
                 truncation=True, 
                 return_tensors="pt"
             )
 
-            # --- Labels ---
-            labels = row[label_cols].to_numpy(dtype=float)  # giữ NaN
-            label_tensor = torch.tensor(labels, dtype=torch.float)
-
+            # --- Bước D: Lưu trữ ---
             self.data.append({
                 'graph': graph,
                 'input_ids': text_enc['input_ids'].squeeze(0),
                 'attention_mask': text_enc['attention_mask'].squeeze(0),
-                'label': label_tensor
+                'labels': torch.tensor(labels_array, dtype=torch.float),
+                'task_mask': torch.tensor(mask_array, dtype=torch.float)
             })
             
     def __len__(self):
@@ -49,4 +77,5 @@ class SmartDrugDataset(Dataset):
     
     def __getitem__(self, idx):
         return self.data[idx]
-
+    
+    
