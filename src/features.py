@@ -91,7 +91,7 @@ def get_bond_features(bond, use_stereochemistry=True):
     return np.array(bond_feature_vector)
 
 
-def molecule_to_graph(molecule, y, mask,
+def molecule_to_graph(molecule,
                       use_atom_features=True, use_bond_features=True,
                       hydrogens_implicit=True):
     """
@@ -115,14 +115,14 @@ def molecule_to_graph(molecule, y, mask,
     for bond in molecule.GetBonds():
         u = bond.GetBeginAtomIdx()
         v = bond.GetEndAtomIdx()
-        
+
         # Lấy feature cho cạnh
         bf = get_bond_features(bond) if use_bond_features else np.array([1.0])
 
         # Thêm cạnh 2 chiều (Undirected graph)
         edge_index.append([u, v])
         edge_attr_list.append(bf)
-        
+
         edge_index.append([v, u])
         edge_attr_list.append(bf)
 
@@ -136,18 +136,12 @@ def molecule_to_graph(molecule, y, mask,
         edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
         edge_attr = torch.tensor(np.vstack(edge_attr_list), dtype=torch.float)
 
-    # ===== LABELS & METADATA =====
-    # Xử lý y và mask để đảm bảo đúng chiều (thường là [1, num_tasks])
-    y_tensor = torch.tensor(y, dtype=torch.float).view(1, -1)
-    mask_tensor = torch.tensor(mask, dtype=torch.float).view(1, -1)
-
+    
     data = Data(
         x=x,
         edge_index=edge_index,
         edge_attr=edge_attr,
-        y=y_tensor,
-        mask=mask_tensor,
-        
     )
-    
+
     return data
+

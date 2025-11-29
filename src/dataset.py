@@ -7,6 +7,7 @@ from transformers import AutoTokenizer
 from torch_geometric.data import Data as GraphData
 import features as features
 
+
 class SmartDrugDataset(Dataset):
     def __init__(self, df, tokenizer, max_len=128, smiles_col='clean_smiles', label_cols=None):
         """
