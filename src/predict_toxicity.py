@@ -7,6 +7,8 @@ from transformers import AutoTokenizer
 from model import MultimodalNet
 from features import molecule_to_graph
 from data_utils import label_cols_ordered
+from smiles_to_2d import save_smiles_2d
+
 
 def predict_single_smiles(smiles, model, tokenizer, device):  
     model.eval()
@@ -62,7 +64,10 @@ if __name__ == "__main__":
     CHECKPOINT = './checkpoints/trained_multimodal_net.pth'
 
 
-    smiles_test = "CCOc1ccc2nc(S(N)(=O)=O)sc2c1"
+    # smiles_test = "CCOc1ccc2nc(S(N)(=O)=O)sc2c1"
+    smiles_test = "[O-][N+](=O)C1=CC=C(Cl)C=C1"
+
+
     device = torch.device("cpu")
     # Atom feat dim 
     atom_feat_dim = 41
@@ -84,3 +89,5 @@ if __name__ == "__main__":
     )
 
     print_prediction_with_labels(bin_p, organ_p, adr_p, label_cols_ordered)
+
+    save_smiles_2d(smiles_test)
